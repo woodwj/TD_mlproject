@@ -1,17 +1,16 @@
 import yfinance as yf
 import numpy as np
 
-M_data = yf.download("BP SHEL", start="2017-01-01", end="2017-01-30")
+def clean():
+    d = yf.download("BP SHEL", start="2017-01-01", end="2017-01-30")
+    # The ones column to be added    
+    X = d["Open"].to_numpy().T
+    X = np.append(np.ones((X.shape[0],1)), X, axis=1)
 
-def clean(d):
-    # The ones column to be added
-    col = np.ones(shape = d.T.shape, dtype=int)
-    
-    X = d["Open"].T
-    print(X)
+    Y = d["Close"].to_numpy().T
+    return X,Y
 
-    Y = d["Close"].T
-    print(Y)
+def fetch():
+    return clean()
 
-X_t, Y = clean(M_data)
 
