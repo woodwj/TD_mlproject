@@ -1,16 +1,28 @@
 import yfinance as yf
 import numpy as np
 
-def clean():
-    d = yf.download("BP SHEL", start="2017-01-01", end="2017-01-30")
-    # The ones column to be added    
-    X = d["Open"].to_numpy().T
-    X = np.append(np.ones((X.shape[0],1)), X, axis=1)
+class dataset:
+  
+    def fetch(self, stock, period):
+        d = yf.download(stock, period=period)
+        return d["Close"].to_numpy().reshape(d.shape[0],1), d["Open"].to_numpy().reshape(d.shape[0],1)
 
-    Y = d["Close"].to_numpy().T
-    return X,Y
+    def tilda(self,data):
+        return np.concatenate([np.ones((data.shape[0],1)), data],axis=1)
 
-def fetch():
-    return clean()
+    # use "period" instead of start/end
+    # valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max
+    # (optional, default is '1mo')
+    def __init__(self,stocks,period):
+        X,Y = self.fetch(stocks, period)
+        split = int(len(X)*0.8)
+        X_tr = X[:split]
+        X_te = X[split:]
+        self.Y_tr = Y[:split]
+        self.Y_te = Y[split:]
+        self.X_te = self.tilda(X_te)
+        self.X_tr = self.tilda(X_tr)
+        self.X_val = self.tilda(X)
+        self.Y_val = Y
 
 
