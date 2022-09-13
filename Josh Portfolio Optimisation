@@ -1,0 +1,134 @@
+
+from typing_extensions import dataclass_transform
+import yfinance as yf
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from statsmodels.graphics.tsaplots import plot_acf
+from scipy.optimize import minimize
+from sklearn.metrics import mean_absolute_percentage_error
+
+#downloading stock data of given stocks and accompanying timeframe
+def FetchData(stocks,start,end):
+    d = yf.download(stocks,start=start,end=end)
+    data = pd.DataFrame(d["Close"])
+
+    return data
+
+#function that returns daily log returns for each stock
+def LogRetVol(data):
+
+    '''
+    Multiple stocks
+    
+    '''
+    data_numpy = np.array(data)
+    calc_returns = np.zeros(shape = data_numpy.shape)
+    calc_volatility = np.zeros(shape = data_numpy.shape)
+
+    #calculating returns using numpy array; difference between tomorrow closing price and todays
+    for i in range(data_numpy.shape[0] -1): 
+        calc_returns[i,:] = data_numpy[i+1,:]/data_numpy[i,:]
+
+    #converting returns to log returns
+    log_returns = np.log(calc_returns)
+
+    #slicing array to remove NaN values in last row
+    calc_returns_slice = calc_returns[:-1,:] 
+    log_returns_slice = log_returns[:-1,:]
+
+    return log_returns_slice
+
+#function that contructs portfolios using random weights, and then finds maximum Sharpe Ratio out of those portfolios
+def PortfolioGenerator(log_returns_slice):
+
+    noPortfolios = 100000
+    expectedReturn = np.zeros(noPortfolios)
+    expectedVolatility = np.zeros(noPortfolios)
+    sharpeRatio = np.zeros(noPortfolios)
+    weight = np.zeros((noPortfolios,5))
+
+    #generating mean log returns and covariance of each stock over given timescale
+    mean_log_returns =  np.mean(log_returns_slice,axis=0)
+    sigma = np.cov(log_returns_slice, rowvar=0)
+
+    #generating expected return, expected volatility, and thus Sharpe Ratio of each portfolio of random weights
+    for k in range(noPortfolios):
+        w=np.array(np.random.random(5))
+        w = w / np.sum(w)
+        weight[k,:] = w
+        expectedReturn[k] = np.sum(mean_log_returns * w)
+        expectedVolatility[k] = np.sqrt( np.dot(w.T,np.dot(sigma,w)))
+        sharpeRatio[k] = expectedReturn[k]/expectedVolatility[k]
+        
+    #finding and printing the weights that correspond to the highest SR
+    maxIndex = sharpeRatio.argmax() 
+    print('The first model found the optimal weights to be: ',weight[maxIndex,:])
+
+    return sigma, mean_log_returns, w, weight[maxIndex,:], expectedVolatility,expectedReturn,sharpeRatio, maxIndex
+
+#function that returns the negative Sharpe Ratio of a given portfolio constructed from a set of weights
+def NegativeSR(w):
+    w = np.array(w) 
+    Return  = np.sum(mean_log_returns * w)
+    Volatility = np.sqrt( np.dot(w.T,np.dot(sigma,w)))
+    SharpeRatio = Return/Volatility
+
+    return -1 * SharpeRatio
+
+#function that checks if weights sum to one, used in negative SR minimisation function
+def CheckSumsToOne(w):
+
+    return np.sum(w)-1
+
+#using sci py minimize function to minimize negative SR
+def MinimiseNegSR():
+    w0 = [0.2,0.2,0.2,0.2,0.2]
+    bounds = ((0,1),(0,1),(0,1),(0,1),(0,1))
+    constraints = ({'type':'eq', 'fun':CheckSumsToOne})
+    OptimalW = minimize(NegativeSR,w0,method='SLSQP',bounds=bounds,constraints=constraints) 
+    print("the second method found the optimal weights to be: ",OptimalW.x)
+    return w0,bounds
+    
+
+def MinimiseVolatility(w):
+    w = np.array(w)
+    V = np.sqrt( np.dot(w.T,np.dot(sigma,w)))
+    return V
+
+#
+def GetReturn(w):
+    w = np.array(w)
+    R = np.sum(mean_log_returns*w)
+    return R
+
+#constructing the efficient frontier 
+def Frontier(w0, bounds):
+    returns = np.linspace(0,0.01,50)
+    opt_volatility = []
+    for ret in returns:
+        constraints = ({'type':'eq','fun':CheckSumsToOne},{'type':'eq','fun':lambda w: GetReturn(w)-ret})
+        optimal = minimize(MinimiseVolatility,w0,method='SLSQP',bounds=bounds,constraints=constraints)
+        opt_volatility.append(optimal['fun'])
+    
+    return opt_volatility, returns
+
+    
+#plotting the graph
+def Graph(expectedVolatility, expectedReturn, sharpeRatio, maxIndex, opt_volatility, returns):
+    plt.figure(figsize=(20,6)); plt.scatter(expectedVolatility,expectedReturn,c=sharpeRatio); 
+    plt.xlabel('Expected Volatility'); plt.ylabel('Expected Log Returns');
+    plt.colorbar(label="Sharpe Ratio"); plt.scatter(expectedVolatility[maxIndex],expectedReturn[maxIndex],c='red');
+    plt.plot(opt_volatility,returns,'--'); plt.show()
+
+#list of stocks and timescale
+stocklist = 'KO TSLA NVDA AAPL MSFT'; start = '2018-01-01'; end = '2018-02-01'
+
+#running the functions
+data = FetchData(stocklist,start,end)
+log_returns = LogRetVol(data)
+sigma, mean_log_returns, w, max, expectedVolatility, expectedReturn, sharpeRatio, maxIndex = PortfolioGenerator(log_returns)
+w0, bounds = MinimiseNegSR()
+opt_volatility, returns = Frontier(w0, bounds)
+Graph(expectedVolatility,expectedReturn, sharpeRatio, maxIndex, opt_volatility, returns)
+
